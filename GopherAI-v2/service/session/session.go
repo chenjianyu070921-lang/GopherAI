@@ -3,9 +3,12 @@ package session
 import (
 	"GopherAI/common/aihelper"
 	"GopherAI/common/code"
+	"GopherAI/common/rag"
 	"GopherAI/dao/session"
 	"GopherAI/model"
 	"context"
+	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
@@ -100,22 +103,38 @@ func StreamMessageToExistingSession(userName string, sessionID string, userQuest
 		return code.AIModelFail
 	}
 
-	cb := func(msg string) {
-		// 直接发送数据，不转义
-		// SSE 格式：data: <content>\n\n
-		log.Printf("[SSE] Sending chunk: %s (len=%d)\n", msg, len(msg))
-		_, err := writer.Write([]byte("data: " + msg + "\n\n"))
+	// writeSSEData 发送一个 JSON data 帧。内容用 JSON 编码后，LLM 输出中的
+	// 换行、特殊字符不会破坏 SSE 分帧（旧实现直接拼接文本，跨行内容会丢行）。
+	writeSSEData := func(payload map[string]string) error {
+		b, err := json.Marshal(payload)
 		if err != nil {
-			log.Println("[SSE] Write error:", err)
-			return
+			return err
 		}
-		flusher.Flush() //  每次必须 flush
-		log.Println("[SSE] Flushed")
+		if _, err := writer.Write(append([]byte("data: "), b...)); err != nil {
+			return err
+		}
+		if _, err := writer.Write([]byte("\n\n")); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+
+	cb := func(msg string) {
+		if err := writeSSEData(map[string]string{"content": msg}); err != nil {
+			log.Println("[SSE] Write error:", err)
+		}
 	}
 
 	_, err_ := helper.StreamResponse(userName, ctx, cb, userQuestion)
 	if err_ != nil {
 		log.Println("StreamMessageToExistingSession StreamResponse error:", err_)
+		// 流已开始，无法改走 JSON 响应；把具体错误作为 SSE 数据帧下发，
+		// 前端据此给出可操作的提示。
+		friendly := friendlyStreamError(err_)
+		if err := writeSSEData(map[string]string{"error": friendly}); err != nil {
+			log.Println("[SSE] write error frame failed:", err)
+		}
 		return code.AIModelFail
 	}
 
@@ -193,4 +212,16 @@ func GetChatHistory(userName string, sessionID string) ([]model.History, code.Co
 func ChatStreamSend(userName string, sessionID string, userQuestion string, modelType string, writer http.ResponseWriter) code.Code {
 
 	return StreamMessageToExistingSession(userName, sessionID, userQuestion, modelType, writer)
+}
+
+// friendlyStreamError 把模型层错误翻译成面向用户的可操作提示
+func friendlyStreamError(err error) string {
+	switch {
+	case errors.Is(err, rag.ErrKnowledgeBaseEmpty):
+		return "知识库为空：请先点击「上传文档」上传文档，或切换到「普通聊天」模型。"
+	case errors.Is(err, rag.ErrAPIKeyNotConfigured):
+		return "知识库服务未配置，请联系管理员设置 DASHSCOPE_API_KEY。"
+	default:
+		return "生成回复失败，请稍后重试。"
+	}
 }

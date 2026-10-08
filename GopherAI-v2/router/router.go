@@ -9,6 +9,8 @@ import (
 func InitRouter() *gin.Engine {
 
 	r := gin.Default()
+	// 单文件上限 10MB，超出部分落临时文件，避免 multipart 占用过多内存
+	r.MaxMultipartMemory = 32 << 20
 	enterRouter := r.Group("/api/v1")
 	{
 		RegisterUserRouter(enterRouter.Group("/user"))

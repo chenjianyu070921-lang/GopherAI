@@ -1,0 +1,14 @@
+# 本地密钥环境（真实密钥绝不入库）
+local_env.sh
+
+# 上传的文档与运行时目录
+uploads/
+
+# 前端依赖与构建产物
+vue-frontend/node_modules/
+vue-frontend/dist/
+
+# 系统/编辑器杂项
+.DS_Store
+Thumbs.db
+*.log

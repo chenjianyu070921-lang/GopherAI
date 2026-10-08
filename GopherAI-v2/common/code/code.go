@@ -17,6 +17,10 @@ const (
 	CodeInvalidCaptcha   Code = 2008
 	CodeRecordNotFound   Code = 2009
 	CodeIllegalPassword  Code = 2010
+	CodeFileTooLarge     Code = 2011
+	CodeFileInvalidText  Code = 2012
+	CodeRAGNotConfigured Code = 2013
+	CodeQuotaExceeded    Code = 2014
 
 	CodeForbidden Code = 3001
 
@@ -42,6 +46,10 @@ var msg = map[Code]string{
 	CodeInvalidCaptcha:   "验证码错误",
 	CodeRecordNotFound:   "记录不存在",
 	CodeIllegalPassword:  "密码不合法",
+	CodeFileTooLarge:     "文件过大",
+	CodeFileInvalidText:  "文件内容无法识别为文本",
+	CodeRAGNotConfigured: "知识库服务未配置",
+	CodeQuotaExceeded:    "超出知识库配额",
 
 	CodeForbidden: "权限不足",
 

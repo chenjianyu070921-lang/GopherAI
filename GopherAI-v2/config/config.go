@@ -61,6 +61,17 @@ type VoiceServiceConfig struct {
 	VoiceServiceSecretKey string `toml:"voiceServiceSecretKey"`
 }
 
+type UploadConfig struct {
+	UploadDir    string `toml:"uploadDir"`    // 文档存储根目录
+	MaxSizeMB    int    `toml:"maxSizeMB"`    // 单文件大小上限（MB）
+	ChunkSize    int    `toml:"chunkSize"`    // 切块目标长度（rune）
+	ChunkOverlap int    `toml:"chunkOverlap"` // 相邻块重叠长度（rune）
+	TopK         int    `toml:"topK"`         // 向量检索返回块数
+	MaxDocs      int    `toml:"maxDocs"`      // 每用户文档数量上限
+	MaxTotalMB   int    `toml:"maxTotalMB"`   // 每用户文档总容量上限（MB）
+	MaxChunks    int    `toml:"maxChunks"`    // 单文档切块数量上限（防止 embedding 调用爆炸）
+}
+
 type Config struct {
 	EmailConfig        `toml:"emailConfig"`
 	RedisConfig        `toml:"redisConfig"`
@@ -70,6 +81,7 @@ type Config struct {
 	Rabbitmq           `toml:"rabbitmqConfig"`
 	RagModelConfig     `toml:"ragModelConfig"`
 	VoiceServiceConfig `toml:"voiceServiceConfig"`
+	UploadConfig       `toml:"uploadConfig"`
 }
 
 type RedisKeyConfig struct {

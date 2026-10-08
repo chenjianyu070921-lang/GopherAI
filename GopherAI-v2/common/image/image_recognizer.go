@@ -1,3 +1,5 @@
+//go:build cgo
+
 package image
 
 import (
@@ -140,11 +142,9 @@ func (r *ImageRecognizer) PredictFromBuffer(buf []byte) (string, error) {
 	return r.PredictFromImage(img)
 }
 
-
 func (r *ImageRecognizer) PredictFromImage(img image.Image) (string, error) {
 
 	resizedImg := image.NewRGBA(image.Rect(0, 0, r.inputW, r.inputH))
-
 
 	draw.CatmullRom.Scale(resizedImg, resizedImg.Bounds(), img, img.Bounds(), draw.Over, nil)
 
@@ -157,7 +157,6 @@ func (r *ImageRecognizer) PredictFromImage(img image.Image) (string, error) {
 			c := resizedImg.At(x, y)
 
 			r, g, b, _ := c.RGBA()
-
 
 			rf := float32(r>>8) / 255.0
 			gf := float32(g>>8) / 255.0

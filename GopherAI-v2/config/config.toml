@@ -4,8 +4,9 @@ host = "0.0.0.0"
 port = 9090
 
 [emailConfig]
-authcode = "your authcode "
-email = "your qq email"
+# 授权码请通过环境变量 EMAIL_AUTH_CODE 注入（见 local_env.sh），不要写明文
+authcode = "emailAuthCode"
+email = "2250493342@qq.com"
 
 [redisConfig]
 host = "127.0.0.1"
@@ -28,7 +29,7 @@ charset =  "utf8mb4"
  key= "GopherAI-v1"
 
  [rabbitmqConfig]
-  host= "rabbitmq"
+  host= "127.0.0.1"
   port= 5672
   username= "root"
   password= "123456"
@@ -44,3 +45,13 @@ charset =  "utf8mb4"
   [voiceServiceConfig]
   voiceServiceApiKey = "baiduApiKey"
   voiceServiceSecretKey ="baiduSecretKey"
+
+  [uploadConfig]
+  uploadDir = "./uploads"
+  maxSizeMB = 10
+  chunkSize = 800
+  chunkOverlap = 100
+  topK = 5
+  maxDocs = 20
+  maxTotalMB = 50
+  maxChunks = 500

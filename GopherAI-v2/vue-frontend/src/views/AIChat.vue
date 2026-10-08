@@ -21,19 +21,24 @@
     <!-- 右侧聊天区域 -->
     <div class="chat-section">
       <div class="top-bar">
-        <button class="back-btn" @click="$router.push('/menu')">← 返回</button>
+        <button class="back-btn" @click="$router.push('/menu')" :disabled="uploading || loading">← 返回</button>
         <button class="sync-btn" @click="syncHistory" :disabled="!currentSessionId || tempSession">同步历史数据</button>
         <label for="modelType">选择模型：</label>
         <select id="modelType" v-model="selectedModel" class="model-select">
-          <option value="1">阿里百炼</option>
-          <option value="2">阿里百炼 RAG</option>
-          <option value="3">阿里百炼 MCP</option>
+          <option value="1">火山方舟 · 普通聊天</option>
+          <option value="2">阿里百炼 · RAG 知识库</option>
+          <option value="3">MCP 工具</option>
         </select>
         <label for="streamingMode" style="margin-left: 20px;">
           <input type="checkbox" id="streamingMode" v-model="isStreaming" />
           流式响应
         </label>
-        <button class="upload-btn" @click="triggerFileUpload" :disabled="uploading">📎 上传文档(.md/.txt)</button>
+        <button class="upload-btn" @click="triggerFileUpload" :disabled="uploading || loading">
+          📎 {{ uploading ? '上传中...' : '上传文档' }}
+        </button>
+        <button class="docs-btn" @click="openDocsDialog" :disabled="loading">
+          📚 知识库<span v-if="docs.length" class="docs-badge">{{ docs.length }}</span>
+        </button>
         <input
           ref="fileInput"
           type="file"
@@ -77,6 +82,42 @@
         </button>
       </div>
     </div>
+
+    <!-- 知识库文档管理 -->
+    <el-dialog
+      v-model="docsDialogVisible"
+      title="知识库文档"
+      width="640px"
+      :close-on-click-modal="!deletingId"
+      :close-on-press-escape="!deletingId"
+      :show-close="!deletingId"
+    >
+      <el-table :data="docs" size="small" style="width: 100%">
+        <el-table-column prop="name" label="文件名" min-width="180" show-overflow-tooltip />
+        <el-table-column label="大小" width="90">
+          <template #default="{ row }">{{ formatBytes(row.size) }}</template>
+        </el-table-column>
+        <el-table-column prop="chunk_count" label="片段数" width="80" />
+        <el-table-column prop="created_at" label="上传时间" width="160" />
+        <el-table-column label="操作" width="80">
+          <template #default="{ row }">
+            <el-button
+              type="danger"
+              size="small"
+              :loading="deletingId === row.id"
+              :disabled="!!deletingId && deletingId !== row.id"
+              @click="deleteDoc(row)"
+            >删除</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <div class="docs-empty">
+            <p>暂无文档</p>
+            <p>上传 .md / .txt 文件后，选择「阿里百炼 · RAG 知识库」模型，即可基于文档内容问答。</p>
+          </div>
+        </template>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -84,7 +125,7 @@
 
 
 import { ref, nextTick, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../utils/api'
 
 export default {
@@ -103,11 +144,24 @@ export default {
     const isStreaming = ref(false)
     const uploading = ref(false)
     const fileInput = ref(null)
+    const docs = ref([])
+    const docsDialogVisible = ref(false)
+    const deletingId = ref(null)
 
+
+    // escapeHtml 先把文本转成纯文本实体，再做 Markdown 替换。
+    // 旧实现直接对原文做替换后 v-html，文档/AI 输出中的 <script>、<img onerror>
+    // 会被当作 HTML 执行（存储型 XSS）。
+    const escapeHtml = (text) => String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
 
     const renderMarkdown = (text) => {
       if (!text && text !== '') return ''
-      return String(text)
+      return escapeHtml(text)
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/`(.*?)`/g, '<code>$1</code>')
@@ -385,10 +439,16 @@ export default {
                 currentMessages.value[aiMessageIndex].meta = { status: 'done' }
                 currentMessages.value = [...currentMessages.value]
               } else if (data.startsWith('{')) {
-                // 尝试解析 JSON（如 sessionId）
+                // JSON 帧：content（LLM 内容）、error（错误提示）、sessionId（新会话绑定）
                 try {
                   const parsed = JSON.parse(data)
-                  if (parsed.sessionId) {
+                  if (parsed.error) {
+                    loading.value = false
+                    currentMessages.value[aiMessageIndex].meta = { status: 'error' }
+                    ElMessage.error(parsed.error)
+                  } else if (parsed.content !== undefined && parsed.content !== null) {
+                    currentMessages.value[aiMessageIndex].content += parsed.content
+                  } else if (parsed.sessionId) {
                     const newSid = String(parsed.sessionId)
                     console.log('[SSE] Session ID:', newSid)
                     if (tempSession.value) {
@@ -402,7 +462,7 @@ export default {
                     }
                   }
                 } catch (e) {
-                  // 不是 JSON，当作普通文本处理
+                  // JSON 解析失败，兜底按普通文本处理
                   currentMessages.value[aiMessageIndex].content += data
                   console.log('[SSE] Content updated:', currentMessages.value[aiMessageIndex].content.length)
                 }
@@ -520,6 +580,59 @@ export default {
       }
     }
 
+    // 与后端 config.toml uploadConfig.maxSizeMB 保持一致
+    const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+    const formatBytes = (bytes) => {
+      if (!bytes && bytes !== 0) return '-'
+      if (bytes < 1024) return `${bytes} B`
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+    }
+
+    const loadDocs = async () => {
+      try {
+        const response = await api.get('/file/list')
+        if (response.data && response.data.status_code === 1000 && Array.isArray(response.data.docs)) {
+          docs.value = response.data.docs
+        }
+      } catch (error) {
+        console.error('Load docs error:', error)
+      }
+    }
+
+    const openDocsDialog = () => {
+      docsDialogVisible.value = true
+    }
+
+    const deleteDoc = async (row) => {
+      try {
+        await ElMessageBox.confirm(
+          `确定删除文档「${row.name}」吗？删除后 RAG 将无法检索该文档内容。`,
+          '删除确认',
+          { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+        )
+      } catch {
+        return // 用户取消
+      }
+
+      try {
+        deletingId.value = row.id
+        const response = await api.delete(`/file/${row.id}`)
+        if (response.data && response.data.status_code === 1000) {
+          ElMessage.success('文档已删除')
+          await loadDocs()
+        } else {
+          ElMessage.error(response.data?.status_msg || '删除失败')
+        }
+      } catch (error) {
+        console.error('Delete doc error:', error)
+        ElMessage.error('删除文档失败')
+      } finally {
+        deletingId.value = null
+      }
+    }
+
     const handleFileUpload = async (event) => {
       const file = event.target.files[0]
       if (!file) return
@@ -528,7 +641,23 @@ export default {
       const fileName = file.name.toLowerCase()
       if (!fileName.endsWith('.md') && !fileName.endsWith('.txt')) {
         ElMessage.error('只允许上传 .md 或 .txt 文件')
-        // 清空文件输入
+        if (fileInput.value) {
+          fileInput.value.value = ''
+        }
+        return
+      }
+
+      // 前端大小预检，避免无效上传
+      if (file.size > MAX_FILE_SIZE) {
+        ElMessage.error('文件过大，单个文档不能超过 10MB')
+        if (fileInput.value) {
+          fileInput.value.value = ''
+        }
+        return
+      }
+
+      if (file.size === 0) {
+        ElMessage.error('文件内容为空')
         if (fileInput.value) {
           fileInput.value.value = ''
         }
@@ -540,14 +669,16 @@ export default {
         const formData = new FormData()
         formData.append('file', file)
 
-        const response = await api.post('/file/upload', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        })
+        // 不手动设置 Content-Type：浏览器会自动加上 multipart boundary，
+        // 手动设置反而会丢掉 boundary 导致服务端无法解析。
+        const response = await api.post('/file/upload', formData)
 
         if (response.data && response.data.status_code === 1000) {
-          ElMessage.success(`文件上传成功`)
+          const chunks = response.data.chunk_count
+          ElMessage.success(
+            `上传成功，文档已切分为 ${chunks} 个片段。选择「阿里百炼 · RAG 知识库」模型即可基于文档问答`
+          )
+          await loadDocs()
         } else {
           ElMessage.error(response.data?.status_msg || '上传失败')
         }
@@ -556,7 +687,6 @@ export default {
         ElMessage.error('文件上传失败')
       } finally {
         uploading.value = false
-        // 清空文件输入
         if (fileInput.value) {
           fileInput.value.value = ''
         }
@@ -565,6 +695,7 @@ export default {
 
     onMounted(() => {
       loadSessions()
+      loadDocs()
     })
 
     // expose to template
@@ -588,7 +719,13 @@ export default {
       syncHistory,
       sendMessage,
       triggerFileUpload,
-      handleFileUpload
+      handleFileUpload,
+      docs,
+      docsDialogVisible,
+      deletingId,
+      openDocsDialog,
+      deleteDoc,
+      formatBytes
     }
   }
 }
@@ -808,6 +945,53 @@ export default {
   background: #ccc;
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.docs-btn {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: white;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.2);
+  transition: all 0.2s ease;
+}
+
+.docs-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(79, 172, 254, 0.3);
+}
+
+.docs-btn:disabled {
+  background: #ccc;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.docs-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.docs-empty {
+  padding: 24px 12px;
+  color: #888;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.docs-empty p {
+  margin: 4px 0;
 }
 
 .chat-messages {

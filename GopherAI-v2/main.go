@@ -8,6 +8,7 @@ import (
 	"GopherAI/config"
 	"GopherAI/dao/message"
 	"GopherAI/router"
+	"GopherAI/service/file"
 	"fmt"
 	"log"
 )
@@ -64,6 +65,10 @@ func main() {
 	//初始化redis
 	redis.Init()
 	log.Println("redis init success  ")
+
+	// 启动维护：等待 Redis 就绪 → 恢复未完成上传 → 对账孤儿向量/文件
+	file.StartupMaintenance()
+
 	rabbitmq.InitRabbitMQ()
 	log.Println("rabbitmq init success  ")
 

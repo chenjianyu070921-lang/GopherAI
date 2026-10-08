@@ -3,6 +3,7 @@ package email
 import (
 	"GopherAI/config"
 	"fmt"
+	"os"
 
 	"gopkg.in/gomail.v2"
 )
@@ -24,8 +25,14 @@ func SendCaptcha(email, code, msg string) error {
 	// 正文内容（纯文本形式，也可以用 text/html）
 	m.SetBody("text/plain", msg+" "+code)
 
+	// 授权码优先取环境变量 EMAIL_AUTH_CODE，避免真实凭证明文写在 config.toml
+	authcode := os.Getenv("EMAIL_AUTH_CODE")
+	if authcode == "" {
+		authcode = config.GetConfig().EmailConfig.Authcode
+	}
+
 	// 配置 SMTP 服务器和授权码,587：是 SMTP 的明文/STARTTLS 端口号
-	d := gomail.NewDialer("smtp.qq.com", 587, config.GetConfig().EmailConfig.Email, config.GetConfig().EmailConfig.Authcode)
+	d := gomail.NewDialer("smtp.qq.com", 587, config.GetConfig().EmailConfig.Email, authcode)
 
 	// 发送邮件
 	if err := d.DialAndSend(m); err != nil {

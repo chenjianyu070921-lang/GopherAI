@@ -4,7 +4,6 @@ import (
 	"GopherAI/common/code"
 	"GopherAI/controller"
 	"GopherAI/utils/myjwt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -16,22 +15,20 @@ func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		res := new(controller.Response)
 
-		var token string
+		// 只接受 Authorization: Bearer <token>，不接受 URL 查询参数（token 会经日志/Referer 泄露）
 		authHeader := c.GetHeader("Authorization")
-		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
-		} else {
-			// 兼容 URL 参数传 token
-			token = c.Query("token")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			c.JSON(http.StatusOK, res.CodeOf(code.CodeInvalidToken))
+			c.Abort()
+			return
 		}
-
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 		if token == "" {
 			c.JSON(http.StatusOK, res.CodeOf(code.CodeInvalidToken))
 			c.Abort()
 			return
 		}
 
-		log.Println("token is ", token)
 		userName, ok := myjwt.ParseToken(token)
 		if !ok {
 			c.JSON(http.StatusOK, res.CodeOf(code.CodeInvalidToken))

@@ -1,7 +1,6 @@
 package rabbitmq
 
 var (
-
 	RMQMessage *RabbitMQ
 )
 

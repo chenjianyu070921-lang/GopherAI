@@ -110,10 +110,10 @@ func CreateStreamSessionAndSendMessage(c *gin.Context) {
 	c.Writer.WriteString(fmt.Sprintf("data: {\"sessionId\": \"%s\"}\n\n", sessionID))
 	c.Writer.Flush()
 
-	// 然后开始把本次回答进行流式发送（包含最后的 [DONE]）
+	// 然后开始把本次回答进行流式发送（包含最后的 [DONE]）。
+	// 失败时 service 层已经把具体错误作为 SSE 数据帧下发，这里不再补发通用错误帧。
 	code_ = session.StreamMessageToExistingSession(userName, sessionID, req.UserQuestion, req.ModelType, http.ResponseWriter(c.Writer))
 	if code_ != code.CodeSuccess {
-		c.SSEvent("error", gin.H{"message": "Failed to send message"})
 		return
 	}
 }
@@ -154,10 +154,9 @@ func ChatStreamSend(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("X-Accel-Buffering", "no") // 禁止代理缓存
 
-
+	// 失败时错误详情已由 service 层作为 SSE 数据帧下发
 	code_ := session.ChatStreamSend(userName, req.SessionID, req.UserQuestion, req.ModelType, http.ResponseWriter(c.Writer))
 	if code_ != code.CodeSuccess {
-		c.SSEvent("error", gin.H{"message": "Failed to send message"})
 		return
 	}
 

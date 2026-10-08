@@ -7,20 +7,18 @@ import (
 	"mime/multipart"
 )
 
-
 func RecognizeImage(file *multipart.FileHeader) (string, error) {
 
 	modelPath := "/root/models/mobilenetv2/mobilenetv2-7.onnx"
 	labelPath := "/root/imagenet_classes.txt"
 	inputH, inputW := 224, 224
 
-
 	recognizer, err := image.NewImageRecognizer(modelPath, labelPath, inputH, inputW)
 	if err != nil {
 		log.Println("NewImageRecognizer fail err is : ", err)
 		return "", err
 	}
-	defer recognizer.Close() 
+	defer recognizer.Close()
 
 	src, err := file.Open()
 	if err != nil {
@@ -34,7 +32,6 @@ func RecognizeImage(file *multipart.FileHeader) (string, error) {
 		log.Println("io.ReadAll fail err is : ", err)
 		return "", err
 	}
-
 
 	return recognizer.PredictFromBuffer(buf)
 }
